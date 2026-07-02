@@ -15,7 +15,7 @@ except:
     st.stop()
 
 def get_core_address(addr):
-    """카카오 API가 좋아하는 완벽한 뼈대 주소로 변환하는 핵심 엔진"""
+    """자질구레한 꼬리표를 무조건 잘라내는 무적의 뼈대 절단기"""
     addr = str(addr).strip()
     
     # 1. 괄호 내용(구주소 등) 제거
@@ -24,30 +24,36 @@ def get_core_address(addr):
     # 2. 띄어쓰기 오류 강제 교정 (예: 산본천로 179번길 -> 산본천로179번길)
     addr = re.sub(r'([가-힣]+(?:로|길))\s+(\d+[가-힣]*길)', r'\1\2', addr)
     
-    # 3. 명시적인 상세주소(동, 호, 층) 꼬리표 확실하게 잘라내기
-    addr = re.sub(r'\s+(?:[가-힣A-Za-z0-9]+동)?\s*(?:지하)?\s*\d+(?:호|층)\b.*$', '', addr)
-    
-    # 4. '101-201' 처럼 글자 없는 동호수 패턴 제거
-    match = re.search(r'([가-힣A-Za-z0-9]+(?:로|길|동|리|가)\s*\d+(?:-\d+)?)\s+\d+-\d+', addr)
+    # 3. 무적의 절단기: '로/길/동/리 + 번지수' 까지만 캡처하고 뒤는 모조리 버림!
+    # 예: 경기도 군포시 당동로32번길 29 103 -> 경기도 군포시 당동로32번길 29
+    # 예: 경기도 수원시 장안구 하율로46번길 17 305동 803호 -> 경기도 수원시 장안구 하율로46번길 17
+    match = re.match(r'^(.+(?:로|길|동|리|가)\s*\d+(?:-\d+)?)', addr)
     if match:
-        addr = match.group(1)
+        return match.group(1).strip()
         
     return addr.strip()
 
 def advanced_clean_address(original_addr, standardized_addr, building_name):
-    """아파트명 결합 및 101-2301 -> 101동 2301호 정밀 변환"""
+    """아파트명 결합 및 동호수 정밀 변환"""
     dong_ho = ""
+    # 1. 101-2301 패턴
     hyphen_match = re.search(r'(\d+)-(\d+)', original_addr)
     if hyphen_match:
         dong_ho = f"{hyphen_match.group(1)}동 {hyphen_match.group(2)}호"
     else:
+        # 2. 101동 2301호 패턴
         dong_ho_match = re.search(r'(\d+\s*동\s*\d+\s*호)', original_addr)
         if dong_ho_match:
             dong_ho = dong_ho_match.group(1)
         else:
-            single_match = re.search(r'(\d+)\s*(?:동|호|층)', original_addr)
+            # 3. 숫자만 덜렁 있는 경우 (예: 29 103 -> 103호)
+            single_match = re.search(r'\s+(\d+)\s*(?:동|호|층)?$', original_addr)
             if single_match:
-                dong_ho = original_addr[single_match.start():]
+                val = single_match.group(1)
+                if original_addr.strip().endswith(val):
+                    dong_ho = f"{val}호"
+                else:
+                    dong_ho = original_addr[single_match.start():].strip()
 
     final_addr = standardized_addr
     if building_name and (building_name not in final_addr):
@@ -56,9 +62,10 @@ def advanced_clean_address(original_addr, standardized_addr, building_name):
     if dong_ho:
         final_addr = f"{final_addr} {dong_ho}"
     else:
+        # 절단기로 잘려나간 찌꺼기 중, 건물명이 아닌 것들을 살려서 끝에 붙임
         remain_match = re.search(r'(?:로|길|동|리)\s*\d+(?:-\d+)?\s+(.+)', original_addr)
         if remain_match:
-            remain_text = remain_match.group(1)
+            remain_text = remain_match.group(1).strip()
             if building_name not in remain_text:
                 final_addr = f"{final_addr} {remain_text}"
 
@@ -74,11 +81,11 @@ def verify_address(address):
     addr_url = "https://dapi.kakao.com/v2/local/search/address.json"
     kw_url = "https://dapi.kakao.com/v2/local/search/keyword.json"
     
-    # 정제 엔진 가동
+    # 무적의 정제 엔진 가동
     core_addr = get_core_address(original_addr)
     addr_no_bracket = re.sub(r'\(.*?\)', '', original_addr).strip()
 
-    # 원본 -> 뼈대주소 -> 괄호제거주소 순으로 3번 찔러봄
+    # 원본 -> 무적뼈대주소 -> 괄호제거주소 순으로 찔러봄
     search_candidates = [original_addr, core_addr, addr_no_bracket]
     
     for query_addr in search_candidates:
@@ -200,7 +207,7 @@ if uploaded_file is not None:
                 st.download_button(
                     label="📥 최종 정제된 엑셀 다운로드",
                     data=output,
-                    file_name=uploaded_file.name.replace(".xlsx", "_완벽정제.xlsx").replace(".xls", "_완벽정제.xlsx"),
+                    file_name=uploaded_file.name.replace(".xlsx", "_최종정제.xlsx").replace(".xls", "_최종정제.xlsx"),
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
     except Exception as e:
